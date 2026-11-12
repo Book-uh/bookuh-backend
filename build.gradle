@@ -1,0 +1,39 @@
+// 사용할 플러그인: Java 컴파일 + Spring Boot 실행/포장 + 라이브러리 버전 자동 맞춤
+plugins {
+    id 'java'
+    id 'org.springframework.boot' version '3.5.16'
+    id 'io.spring.dependency-management' version '1.1.7'
+}
+
+group = 'com.bookuh'
+version = '0.0.1-SNAPSHOT'
+description = '북어 iOS 앱의 Spring Boot 서버'
+
+// Java 17로 컴파일
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+// 라이브러리를 내려받는 곳
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // 웹 서버(Tomcat)와 REST API 기능
+    implementation 'org.springframework.boot:spring-boot-starter-web'
+    // JPA: Java 클래스로 DB 테이블을 다루게 해주는 도구
+    implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    // Java와 MySQL 사이의 통역사(드라이버), 실행할 때만 필요
+    runtimeOnly 'com.mysql:mysql-connector-j'
+    // 테스트 도구
+    testImplementation 'org.springframework.boot:spring-boot-starter-test'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// 테스트는 JUnit 플랫폼으로 실행
+tasks.named('test') {
+    useJUnitPlatform()
+}
