@@ -1,6 +1,6 @@
 package com.bookuh.backend.controller;
 
-import com.bookuh.backend.dto.BookSearchItem;
+import com.bookuh.backend.dto.BookSearchResponse;
 import com.bookuh.backend.service.BookSearchService;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -20,7 +20,7 @@ public class BookSearchController {
 
     //검색어 요청 처리
     @GetMapping("/api/v1/books/search")
-    public List<BookSearchItem> search(@RequestParam String query){
+    public List<BookSearchResponse> search(@RequestParam String query){
         return bookSearchService.search(query);
     }
 }

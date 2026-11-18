@@ -1,6 +1,6 @@
 package com.bookuh.backend.service;
 
-import com.bookuh.backend.dto.BookSearchItem;
+import com.bookuh.backend.dto.BookSearchResponse;
 import com.fasterxml.jackson.databind.JsonNode;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -21,7 +21,7 @@ public class BookSearchService {
     public BookSearchService(@Value("${google.books.api-key}") String apiKey) {
         this.apiKey = apiKey;
     }
-    public List<BookSearchItem> search(String query) {
+    public List<BookSearchResponse> search(String query) {
 
         //구글 북스에 검색어를 보내고 응답(json)을 일단 통째로 받는다
         JsonNode response = restClient.get()
@@ -34,7 +34,7 @@ public class BookSearchService {
                 .retrieve()
                 .body(JsonNode.class);
 
-        List<BookSearchItem> results = new ArrayList<>();
+        List<BookSearchResponse> results = new ArrayList<>();
 
         //응답 속 책 목록을 한 권씩 꺼내 살펴본다
         for (JsonNode item : response.path("items")) {
@@ -59,7 +59,7 @@ public class BookSearchService {
             String author = String.join(", ", authors);
 
             //만들어 둔 dto에 담는다.
-            results.add(new BookSearchItem(
+            results.add(new BookSearchResponse(
                     isbn13,
                     info.path("title").asText(""),
                     author,
