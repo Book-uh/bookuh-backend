@@ -1,6 +1,9 @@
 package com.bookuh.backend.entity;
 
 import jakarta.persistence.*;
+import lombok.AccessLevel;
+import lombok.Getter;
+import lombok.NoArgsConstructor;
 
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -8,6 +11,9 @@ import java.time.ZoneOffset;
 @Entity
 @Table(name = "bookshelf_items",
         uniqueConstraints = @UniqueConstraint(columnNames = {"user_id", "isbn"}))
+@Getter
+// JPA가 책장 칸을 불러올 때 사용한다
+@NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class BookshelfItem {
 
     @Id
@@ -31,35 +37,11 @@ public class BookshelfItem {
     @Column(name = "reading_status", nullable = false, length = 16)
     private String readingStatus;
 
-    // JPA가 책장 칸을 불러올 때 사용한다
-    protected BookshelfItem() {
-    }
-
     // 새 책장 칸을 만든다
     public BookshelfItem(User user, Book book) {
         this.user = user;
         this.book = book;
         this.shelvedAt = LocalDateTime.now(ZoneOffset.UTC);
         this.readingStatus = "NOT_STARTED";
-    }
-
-    public Long getId() {
-        return id;
-    }
-
-    public User getUser() {
-        return user;
-    }
-
-    public Book getBook() {
-        return book;
-    }
-
-    public LocalDateTime getShelvedAt() {
-        return shelvedAt;
-    }
-
-    public String getReadingStatus() {
-        return readingStatus;
     }
 }

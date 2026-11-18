@@ -4,6 +4,7 @@ import com.bookuh.backend.dto.AuthResponse;
 import com.bookuh.backend.dto.AuthResult;
 import com.bookuh.backend.entity.User;
 import com.bookuh.backend.repository.UserRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.web.server.ResponseStatusException;
@@ -11,15 +12,11 @@ import org.springframework.web.server.ResponseStatusException;
 import java.util.Optional;
 
 @Service
+@RequiredArgsConstructor
 public class AuthService {
 
     private final UserRepository userRepository;
     private final TokenService tokenService;
-
-    public AuthService(UserRepository userRepository, TokenService tokenService) {
-        this.userRepository = userRepository;
-        this.tokenService = tokenService;
-    }
 
     // 처음 요청이면 사용자를 만들고 같은 요청이면 기존 사용자를 반환한다
     public synchronized AuthResult issue(String issuanceKey) {

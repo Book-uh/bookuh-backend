@@ -5,20 +5,17 @@ import com.bookuh.backend.entity.BookshelfItem;
 import com.bookuh.backend.entity.User;
 import com.bookuh.backend.repository.BookRepository;
 import com.bookuh.backend.repository.BookshelfItemRepository;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
 
 @Service
+@RequiredArgsConstructor
 public class BookshelfService {
 
     private final BookshelfItemRepository bookshelfItemRepository;
     private final BookRepository bookRepository;
-
-    public BookshelfService(BookshelfItemRepository bookshelfItemRepository, BookRepository bookRepository) {
-        this.bookshelfItemRepository = bookshelfItemRepository;
-        this.bookRepository = bookRepository;
-    }
 
     //사용자의 책장에 책을 담는다
     public BookshelfItem addToShelf(User user, Book incomingBook){

@@ -22,6 +22,9 @@ repositories {
 }
 
 dependencies {
+    // getter와 setter 등 반복 코드를 자동 생성한다
+    compileOnly 'org.projectlombok:lombok'
+    annotationProcessor 'org.projectlombok:lombok'
     // 웹 서버(Tomcat)와 REST API 기능
     implementation 'org.springframework.boot:spring-boot-starter-web'
     // JPA: Java 클래스로 DB 테이블을 다루게 해주는 도구
