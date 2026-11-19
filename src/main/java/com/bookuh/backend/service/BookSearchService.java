@@ -63,6 +63,7 @@ public class BookSearchService {
                     isbn13,
                     info.path("title").asText(""),
                     author,
+                    authors,
                     info.path("publisher").asText(""),
                     info.path("publishedDate").asText(""),
                     info.path("imageLinks").path("thumbnail").asText("")

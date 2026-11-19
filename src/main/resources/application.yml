@@ -19,3 +19,7 @@ google:
 
 auth:
   token-secret: ${AUTH_TOKEN_SECRET}
+
+anthropic:
+  api-key: ${ANTHROPIC_API_KEY}
+  model: claude-sonnet-5-5
