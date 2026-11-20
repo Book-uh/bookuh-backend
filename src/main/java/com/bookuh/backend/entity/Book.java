@@ -18,12 +18,11 @@ import java.util.List;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Book {
 
+    private static final String CHARACTER_NOT_STARTED = "NOT_STARTED";
+
     @Id
     @Column(name = "isbn", nullable = false, columnDefinition = "CHAR(13)")
     private String isbn13;
-
-    @Column(name = "google_volume_id", length = 128)
-    private String googleVolumeId;
 
     @Column(name = "title", nullable = false, length = 512)
     private String title;
@@ -48,17 +47,15 @@ public class Book {
     private LocalDateTime characterStatusUpdatedAt;
 
     // 새 책의 정보와 초기 상태를 설정한다
-    public Book(String isbn13, String googleVolumeId, String title,
-                List<String> authors, String publisher, Short publishedYear,
-                String coverUrl) {
+    public Book(String isbn13, String title, List<String> authors,
+                String publisher, Short publishedYear, String coverUrl) {
         this.isbn13 = isbn13;
-        this.googleVolumeId = googleVolumeId;
         this.title = title;
         this.authors = authors;
         this.publisher = publisher;
         this.publishedYear = publishedYear;
         this.coverUrl = coverUrl;
-        this.characterStatus = "NOT_STARTED";
+        this.characterStatus = CHARACTER_NOT_STARTED;
         this.characterStatusUpdatedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 }

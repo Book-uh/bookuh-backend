@@ -15,13 +15,17 @@ import java.util.Map;
 @Table(name = "api_requests",
         uniqueConstraints = @UniqueConstraint( //같은 사용자,요청 종류, 요청 번호 조합의 중복 저장 방지
                 columnNames = {"user_id", "request_kind", "client_request_id"}))
-
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ApiRequest {
+
+    private static final String PROCESSING = "PROCESSING";
+    private static final String SUCCEEDED = "SUCCEEDED";
+    private static final String FAILED = "FAILED";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name ="id", columnDefinition = "BIGINT UNSIGNED")
+    @Column(name = "id", columnDefinition = "BIGINT UNSIGNED")
     private Long id;
 
     @ManyToOne(optional = false, fetch = FetchType.LAZY)
@@ -72,13 +76,14 @@ public class ApiRequest {
         this.requestKind = requestKind;
         this.clientRequestId = clientRequestId;
         this.payloadDigest = payloadDigest;
-        this.status = "PROCESSING";
+        this.status = PROCESSING;
         this.createdAt = LocalDateTime.now(ZoneOffset.UTC);
         this.updatedAt = this.createdAt;
     }
+
     // 성공한 요청의 응답 코드와 결과를 저장한다
     public void succeed(int responseCode, Map<String, Object> resultPayload) {
-        this.status = "SUCCEEDED";
+        this.status = SUCCEEDED;
         this.responseCode = (short) responseCode;
         this.resultPayload = resultPayload;
         this.updatedAt = LocalDateTime.now(ZoneOffset.UTC);
@@ -86,15 +91,30 @@ public class ApiRequest {
 
     // 요청을 실패 상태로 바꾼다
     public void fail() {
-        this.status = "FAILED";
+        this.status = FAILED;
         this.updatedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
 
     // 실패한 요청을 다시 처리할 준비를 한다
     public void retry() {
-        this.status = "PROCESSING";
+        this.status = PROCESSING;
         this.responseCode = null;
         this.resultPayload = null;
         this.updatedAt = LocalDateTime.now(ZoneOffset.UTC);
+    }
+
+    // 처리를 마친 요청인지 확인한다
+    public boolean isSucceeded() {
+        return SUCCEEDED.equals(status);
+    }
+
+    // 아직 처리 중인 요청인지 확인한다
+    public boolean isProcessing() {
+        return PROCESSING.equals(status);
+    }
+
+    // 처리에 실패한 요청인지 확인한다
+    public boolean isFailed() {
+        return FAILED.equals(status);
     }
 }

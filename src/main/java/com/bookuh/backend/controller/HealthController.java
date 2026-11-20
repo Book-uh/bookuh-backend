@@ -1,13 +1,15 @@
 package com.bookuh.backend.controller;
 
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
+@RequestMapping("/api/v1/health")
 public class HealthController {
-    @GetMapping("/api/v1/health")
-        public String health(){
-        return"북어 서버가 실행 중";
-    }
 
+    @GetMapping
+    public String health() {
+        return "북어 서버가 실행 중";
+    }
 }

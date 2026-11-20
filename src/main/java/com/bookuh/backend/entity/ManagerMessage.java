@@ -18,6 +18,9 @@ import java.time.ZoneOffset;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class ManagerMessage {
 
+    private static final String ROLE_USER = "USER";
+    private static final String ROLE_ASSISTANT = "ASSISTANT";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", columnDefinition = "BIGINT UNSIGNED")
@@ -59,5 +62,17 @@ public class ManagerMessage {
         this.role = role;
         this.body = body;
         this.createdAt = LocalDateTime.now(ZoneOffset.UTC);
+    }
+
+    // 사용자가 보낸 말풍선을 만든다
+    public static ManagerMessage ofUser(User user, BookshelfItem bookshelfItem,
+                                        ApiRequest apiRequest, String body) {
+        return new ManagerMessage(user, bookshelfItem, apiRequest, (short) 1, ROLE_USER, body);
+    }
+
+    // 북어가 보낸 말풍선을 만든다
+    public static ManagerMessage ofAssistant(User user, BookshelfItem bookshelfItem,
+                                             ApiRequest apiRequest, String body) {
+        return new ManagerMessage(user, bookshelfItem, apiRequest, (short) 2, ROLE_ASSISTANT, body);
     }
 }

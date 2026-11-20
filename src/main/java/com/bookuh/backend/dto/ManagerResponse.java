@@ -1,6 +1,5 @@
 package com.bookuh.backend.dto;
 
-import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
@@ -10,7 +9,6 @@ import java.util.List;
 @Getter
 @Setter
 @NoArgsConstructor
-@AllArgsConstructor
 //서버가 앱에 돌려주는 결과
 public class ManagerResponse {
 

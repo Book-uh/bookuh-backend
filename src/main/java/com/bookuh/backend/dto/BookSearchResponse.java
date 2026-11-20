@@ -9,6 +9,7 @@ import java.util.List;
 @AllArgsConstructor
 public class BookSearchResponse {
 
+    private String googleVolumeId;
     private String isbn13; //13자리 기준으로 할 것
     private String title;
     private String author;

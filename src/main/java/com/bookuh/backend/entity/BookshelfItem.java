@@ -16,6 +16,8 @@ import java.time.ZoneOffset;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class BookshelfItem {
 
+    private static final String NOT_STARTED = "NOT_STARTED";
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", columnDefinition = "BIGINT UNSIGNED")
@@ -42,6 +44,6 @@ public class BookshelfItem {
         this.user = user;
         this.book = book;
         this.shelvedAt = LocalDateTime.now(ZoneOffset.UTC);
-        this.readingStatus = "NOT_STARTED";
+        this.readingStatus = NOT_STARTED;
     }
 }

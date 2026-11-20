@@ -17,6 +17,10 @@ import java.util.Map;
 @Service
 public class ClaudeService {
 
+    private static final String BASE_URL = "https://api.anthropic.com";
+    private static final String API_VERSION = "2026-10-21";
+    private static final int MAX_TOKENS = 2048;
+
     private final RestClient restClient;
     private final String model;
 
@@ -25,9 +29,9 @@ public class ClaudeService {
                          @Value("${anthropic.model}") String model) {
         this.model = model;
         this.restClient = RestClient.builder()
-                .baseUrl("https://api.anthropic.com")
+                .baseUrl(BASE_URL)
                 .defaultHeader("Authorization", "Bearer " + apiKey)
-                .defaultHeader("anthropic-version", "2026-10-21")
+                .defaultHeader("anthropic-version", API_VERSION)
                 .build();
     }
 
@@ -35,7 +39,7 @@ public class ClaudeService {
     public String reply(String systemPrompt, List<Map<String, String>> messages) {
         Map<String, Object> body = Map.of(
                 "model", model,
-                "max_tokens", 2048,
+                "max_tokens", MAX_TOKENS,
                 "system", systemPrompt,
                 "messages", messages,
                 "thinking", Map.of("type", "adaptive"),
@@ -70,7 +74,7 @@ public class ClaudeService {
         StringBuilder answer = new StringBuilder();
         for (JsonNode block : response.path("content")) {
             if (block.path("type").asText().equals("text")) {
-                if (answer.length() > 0) {
+                if (!answer.isEmpty()) {
                     answer.append("\n");
                 }
                 answer.append(block.path("text").asText());
