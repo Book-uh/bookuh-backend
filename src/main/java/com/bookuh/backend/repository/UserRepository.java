@@ -1,7 +1,9 @@
 package com.bookuh.backend.repository;
 
 import com.bookuh.backend.entity.User;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Lock;
 
 import java.util.Optional;
 
@@ -9,4 +11,6 @@ public interface UserRepository extends JpaRepository<User, Long> {
 
     Optional<User> findByIssuanceKeyDigest(byte[] issuanceKeyDigest);
     Optional<User> findByAccessTokenDigest(byte[] accessTokenDigest);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    Optional<User> findLockedById(Long id);
 }

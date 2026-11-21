@@ -8,6 +8,7 @@ import com.bookuh.backend.entity.ManagerMessage;
 import com.bookuh.backend.entity.User;
 import com.bookuh.backend.repository.ApiRequestRepository;
 import com.bookuh.backend.repository.ManagerMessageRepository;
+import com.bookuh.backend.repository.UserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -17,6 +18,7 @@ import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
@@ -43,35 +45,72 @@ public class ManagerService {
     private final TokenService tokenService;
     private final ObjectMapper objectMapper;
     private final BookshelfService bookshelfService;
+    private final UserRepository userRepository;
+    private final TransactionTemplate transactionTemplate;
 
     // 북어에게 보낸 메시지를 처리한다
     public ManagerResponse talk(User user, ManagerRequest request) {
-        ApiRequest apiRequest = acceptRequest(user, request);
+        byte[] payloadDigest = hashRequest(request);
+        ApiRequest apiRequest = transactionTemplate.execute(transaction -> {
+            User lockedUser = userRepository.findLockedById(user.getId())
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.UNAUTHORIZED, "사용자를 확인할 수 없습니다."));
+            return acceptRequest(lockedUser, request, payloadDigest);
+        });
 
         // 이미 끝난 요청이면 보관해 둔 결과를 그대로 돌려준다
         if (apiRequest.isSucceeded()) {
             return objectMapper.convertValue(apiRequest.getResultPayload(), ManagerResponse.class);
         }
 
-        ManagerResponse response = askManager(user, request, apiRequest);
-        saveConversation(user, request, apiRequest, response);
+        try {
+            ManagerResponse response = askManager(user, request);
+            transactionTemplate.executeWithoutResult(transaction -> {
+                ApiRequest stored = apiRequestRepository.findById(apiRequest.getId()).orElseThrow();
+                saveConversation(user, request, stored, response);
 
-        // 요청을 완료로 바꾸고, 같은 번호표가 다시 오면 돌려줄 결과를 보관한다
-        apiRequest.succeed(200, objectMapper.convertValue(response, new TypeReference<Map<String, Object>>() {}));
-        apiRequestRepository.save(apiRequest);
+                // 요청을 완료로 바꾸고, 같은 번호표가 다시 오면 돌려줄 결과를 보관한다
+                stored.succeed(200, objectMapper.convertValue(
+                        response, new TypeReference<Map<String, Object>>() {}));
+            });
+            return response;
+        } catch (RuntimeException e) {
+            // 실패하면 요청을 실패로 표시하고, 오류는 그대로 앱에 알린다
+            markFailed(apiRequest.getId(), e);
+            throw e;
+        }
+    }
 
-        return response;
+    // 보낸 내용을 확인값으로 바꾼다
+    private byte[] hashRequest(ManagerRequest request) {
+        List<String> fields = Arrays.asList(request.getMessage(), request.getIsbn(),
+                request.getClientTime().toString(), request.getTimeZone());
+        try {
+            return tokenService.hash(objectMapper.writeValueAsString(fields));
+        } catch (JsonProcessingException e) {
+            throw new IllegalStateException("요청 확인값을 만들 수 없습니다.", e);
+        }
+    }
+
+    private void markFailed(Long requestId, RuntimeException originalError) {
+        try {
+            transactionTemplate.executeWithoutResult(transaction -> {
+                ApiRequest stored = apiRequestRepository.findById(requestId).orElse(null);
+                if (stored != null && stored.isProcessing()) {
+                    stored.fail();
+                }
+            });
+        } catch (RuntimeException storageError) {
+            originalError.addSuppressed(storageError);
+        }
     }
 
     // 처음 온 요청은 접수하고, 다시 온 요청은 상태를 확인한다
-    private ApiRequest acceptRequest(User user, ManagerRequest request) {
+    private ApiRequest acceptRequest(User user, ManagerRequest request, byte[] payloadDigest) {
         // 같은 번호표로 이미 받은 요청이 있는지 찾는다
         ApiRequest apiRequest = apiRequestRepository
                 .findByUserAndRequestKindAndClientRequestId(user, REQUEST_KIND, request.getOperationId())
                 .orElse(null);
-
-        // 보낸 내용을 확인값으로 바꾼다
-        byte[] payloadDigest = tokenService.hash(request.getMessage());
 
         if (apiRequest == null) {
             // 처음 온 요청이면 새로 접수한다
@@ -90,13 +129,12 @@ public class ManagerService {
         // 실패했던 요청이면 다시 처리할 준비를 한다
         if (apiRequest.isFailed()) {
             apiRequest.retry();
-            apiRequestRepository.save(apiRequest);
         }
         return apiRequest;
     }
 
     // 지난 대화와 이번 메시지를 북어에게 보내 응답을 받는다
-    private ManagerResponse askManager(User user, ManagerRequest request, ApiRequest apiRequest) {
+    private ManagerResponse askManager(User user, ManagerRequest request) {
         // 이번 메시지에 현재 시각, 시간대, 선택한 책을 함께 적는다
         String userContent = """
                 [현재 시각] %s
@@ -113,16 +151,8 @@ public class ManagerService {
         messages.add(Map.of("role", "user", "content", userContent));
 
         // 북어 안내문과 대화를 보내 답을 받고, 응답 모양으로 바꾼다
-        ManagerResponse response;
-        try {
-            String answer = claudeService.reply(MANAGER_PROMPT, messages);
-            response = parseAnswer(answer);
-        } catch (RuntimeException e) {
-            // 실패하면 요청을 실패로 표시하고, 오류는 그대로 앱에 알린다
-            apiRequest.fail();
-            apiRequestRepository.save(apiRequest);
-            throw e;
-        }
+        String answer = claudeService.reply(MANAGER_PROMPT, messages);
+        ManagerResponse response = parseAnswer(answer);
 
         // 어떤 요청의 결과인지 번호표를 붙이고, 작업마다 번호를 붙인다
         response.setOperationId(request.getOperationId());
