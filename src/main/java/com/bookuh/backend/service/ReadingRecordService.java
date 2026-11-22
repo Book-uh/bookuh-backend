@@ -24,6 +24,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.time.format.DateTimeParseException;
 import java.util.Arrays;
 import java.util.List;
@@ -175,7 +176,8 @@ public class ReadingRecordService {
         return new ReadingRecordResponse(
                 activity.getId() == null ? null : activity.getId().toString(),
                 shelf.getBook().getIsbn13(), shelf.getBook().getTitle(), activity.getReadingDate().toString(),
-                activity.getTimeBand(), activity.getDurationMinutes(), activity.getPagesRead());
+                activity.getTimeBand(), activity.getDurationMinutes(), activity.getPagesRead(),
+                activity.getId() == null ? null : activity.getCreatedAt().toInstant(ZoneOffset.UTC));
     }
 
     private Map<String, Object> asObject(Map<String, Object> payload) {

@@ -3,6 +3,8 @@ package com.bookuh.backend.dto;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 
+import java.time.Instant;
+
 @Getter
 @AllArgsConstructor
 public class ReadingRecordResponse {
@@ -13,4 +15,5 @@ public class ReadingRecordResponse {
     private final String timeBand;
     private final Integer durationMinutes;
     private final Integer pagesRead;
+    private final Instant createdAt;
 }
