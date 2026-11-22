@@ -1,5 +1,6 @@
 package com.bookuh.backend.controller;
 
+import com.bookuh.backend.dto.ManagerMessagesResponse;
 import com.bookuh.backend.dto.ManagerRequest;
 import com.bookuh.backend.dto.ManagerResponse;
 import com.bookuh.backend.entity.User;
@@ -25,5 +26,13 @@ public class ManagerController {
             @Valid @RequestBody ManagerRequest request) {
         User user = authService.authenticateBearer(authorization);
         return managerService.talk(user, request);
+    }
+    // 앱에서 저장된 북어 대화를 조회한다
+    @GetMapping("/messages")
+    public ManagerMessagesResponse messages(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @RequestParam(value = "before", required = false) String before) {
+        User user = authService.authenticateBearer(authorization);
+        return managerService.getMessages(user, before);
     }
 }

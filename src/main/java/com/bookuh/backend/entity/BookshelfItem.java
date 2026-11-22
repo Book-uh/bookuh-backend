@@ -5,8 +5,12 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
+import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
+import java.util.Objects;
 
 @Entity
 @Table(name = "bookshelf_items",
@@ -17,6 +21,8 @@ import java.time.ZoneOffset;
 public class BookshelfItem {
 
     private static final String NOT_STARTED = "NOT_STARTED";
+    private static final String READING = "READING";
+    private static final String FINISHED = "FINISHED";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -39,11 +45,54 @@ public class BookshelfItem {
     @Column(name = "reading_status", nullable = false, length = 16)
     private String readingStatus;
 
+    @Column(name = "progress_version", nullable = false, columnDefinition = "INT UNSIGNED DEFAULT 0")
+    private int progressVersion;
+
+    @Column(name = "progress_stage", length = 12)
+    private String progressStage;
+
+    @Column(name = "progress_scene", columnDefinition = "TEXT")
+    private String progressScene;
+
+    @Column(name = "progress_updated_at")
+    private LocalDateTime progressUpdatedAt;
+
+    @Column(name = "finished_on")
+    private LocalDate finishedOn;
+
     // 새 책장 칸을 만든다
     public BookshelfItem(User user, Book book) {
         this.user = user;
         this.book = book;
         this.shelvedAt = LocalDateTime.now(ZoneOffset.UTC);
         this.readingStatus = NOT_STARTED;
+    }
+
+    public void changeReadingStatus(String status) {
+        this.readingStatus = status;
+        this.finishedOn = null;
+    }
+
+    public boolean matchesProgress(String stage, String scene) {
+        return Objects.equals(progressStage, stage) && Objects.equals(progressScene, scene);
+    }
+
+    public void updateProgress(String stage, String scene, Instant now, ZoneId timeZone) {
+        if (!matchesProgress(stage, scene)) {
+            this.progressStage = stage;
+            this.progressScene = scene;
+            this.progressVersion++;
+            this.progressUpdatedAt = LocalDateTime.ofInstant(now, ZoneOffset.UTC);
+        }
+
+        if (FINISHED.equals(stage)) {
+            this.readingStatus = FINISHED;
+            if (this.finishedOn == null) {
+                this.finishedOn = now.atZone(timeZone).toLocalDate();
+            }
+        } else if (NOT_STARTED.equals(this.readingStatus)
+                && ("START".equals(stage) || "SCENE".equals(stage))) {
+            this.readingStatus = READING;
+        }
     }
 }

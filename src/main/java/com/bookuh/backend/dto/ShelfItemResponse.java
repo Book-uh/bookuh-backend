@@ -9,7 +9,7 @@ import java.util.List;
 @Getter
 @AllArgsConstructor
 public class ShelfItemResponse {
-    private String isbn13;
+    private String isbn;
     private String title;
     private List<String> authors;
     private String publisher;

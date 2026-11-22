@@ -4,9 +4,11 @@ import com.bookuh.backend.dto.ManagerRequest;
 import com.bookuh.backend.dto.ManagerResponse;
 import com.bookuh.backend.dto.ShelfItemResponse;
 import com.bookuh.backend.entity.ApiRequest;
+import com.bookuh.backend.entity.BookshelfItem;
 import com.bookuh.backend.entity.ManagerMessage;
 import com.bookuh.backend.entity.User;
 import com.bookuh.backend.repository.ApiRequestRepository;
+import com.bookuh.backend.repository.BookshelfItemRepository;
 import com.bookuh.backend.repository.ManagerMessageRepository;
 import com.bookuh.backend.repository.UserRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
@@ -30,6 +32,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.bookuh.backend.dto.ManagerMessagesResponse;
+import org.springframework.transaction.annotation.Transactional;
+import java.time.ZoneOffset;
+
 @Service
 @RequiredArgsConstructor
 public class ManagerService {
@@ -45,6 +51,7 @@ public class ManagerService {
     private final TokenService tokenService;
     private final ObjectMapper objectMapper;
     private final BookshelfService bookshelfService;
+    private final BookshelfItemRepository bookshelfItemRepository;
     private final UserRepository userRepository;
     private final TransactionTemplate transactionTemplate;
 
@@ -64,10 +71,14 @@ public class ManagerService {
         }
 
         try {
+            BookshelfItem selectedBook = request.getIsbn() == null ? null
+                    : bookshelfItemRepository.findByUserAndBookIsbn13(user, request.getIsbn())
+                            .orElseThrow(() -> new ResponseStatusException(
+                                    HttpStatus.NOT_FOUND, "내 책장에 없는 책입니다."));
             ManagerResponse response = askManager(user, request);
             transactionTemplate.executeWithoutResult(transaction -> {
                 ApiRequest stored = apiRequestRepository.findById(apiRequest.getId()).orElseThrow();
-                saveConversation(user, request, stored, response);
+                saveConversation(user, selectedBook, request, stored, response);
 
                 // 요청을 완료로 바꾸고, 같은 번호표가 다시 오면 돌려줄 결과를 보관한다
                 stored.succeed(200, objectMapper.convertValue(
@@ -166,11 +177,11 @@ public class ManagerService {
     }
 
     // 사용자 말과 북어 말을 말풍선으로 저장한다
-    private void saveConversation(User user, ManagerRequest request,
+    private void saveConversation(User user, BookshelfItem selectedBook, ManagerRequest request,
                                   ApiRequest apiRequest, ManagerResponse response) {
         managerMessageRepository.saveAll(List.of(
-                ManagerMessage.ofUser(user, null, apiRequest, request.getMessage()),
-                ManagerMessage.ofAssistant(user, null, apiRequest, response.getAssistantMessage())));
+                ManagerMessage.ofUser(user, selectedBook, apiRequest, request.getMessage()),
+                ManagerMessage.ofAssistant(user, selectedBook, apiRequest, response.getAssistantMessage())));
     }
 
     // 북어가 책 제목으로 ISBN을 찾을 수 있게 책장을 한 줄씩 적는다
@@ -181,10 +192,58 @@ public class ManagerService {
         }
         return shelf.stream()
                 .map(book -> "- %s / %s / %s".formatted(
-                        book.getTitle(), String.join(", ", book.getAuthors()), book.getIsbn13()))
+                        book.getTitle(), String.join(", ", book.getAuthors()), book.getIsbn()))
                 .collect(Collectors.joining("\n"));
     }
 
+    // 앱에 보여줄 북어 대화를 한 페이지씩 가져온다
+    @Transactional(readOnly = true)
+    public ManagerMessagesResponse getMessages(User user, String before) {
+        int pageSize = 20;
+        PageRequest page = PageRequest.of(0, pageSize + 1,
+                Sort.by(Sort.Direction.DESC, "createdAt", "id"));
+
+        List<ManagerMessage> recent;
+        if (before == null) {
+            recent = managerMessageRepository.findByUser(user, page);
+        } else {
+            long cursorId;
+            try {
+                cursorId = Long.parseLong(before);
+            } catch (NumberFormatException e) {
+                throw invalidMessageCursor();
+            }
+            if (cursorId < 1) {
+                throw invalidMessageCursor();
+            }
+
+            ManagerMessage cursor = managerMessageRepository.findByUserAndId(user, cursorId)
+                    .orElseThrow(this::invalidMessageCursor);
+            recent = managerMessageRepository.findOlder(
+                    user, cursor.getCreatedAt(), cursor.getId(), page);
+        }
+
+        int count = Math.min(pageSize, recent.size());
+        String nextCursor = recent.size() > pageSize
+                ? recent.get(count - 1).getId().toString()
+                : null;
+
+        List<ManagerMessagesResponse.Item> items = new ArrayList<>();
+        for (int i = count - 1; i >= 0; i--) {
+            ManagerMessage message = recent.get(i);
+            String isbn = message.getBookshelfItem() == null
+                    ? null
+                    : message.getBookshelfItem().getBook().getIsbn13();
+            items.add(new ManagerMessagesResponse.Item(
+                    message.getId().toString(), message.getRole(), isbn, message.getBody(),
+                    message.getCreatedAt().toInstant(ZoneOffset.UTC)));
+        }
+        return new ManagerMessagesResponse(items, nextCursor);
+    }
+
+    private ResponseStatusException invalidMessageCursor() {
+        return new ResponseStatusException(HttpStatus.BAD_REQUEST, "이전 대화 기준이 올바르지 않습니다.");
+    }
     // 이 사용자와 북어가 나눈 최근 대화를 오래된 순서로 가져온다
     private List<Map<String, String>> loadHistory(User user) {
 
