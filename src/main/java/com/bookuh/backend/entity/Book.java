@@ -58,4 +58,9 @@ public class Book {
         this.characterStatus = CHARACTER_NOT_STARTED;
         this.characterStatusUpdatedAt = LocalDateTime.now(ZoneOffset.UTC);
     }
+
+    public void updateCharacterStatus(String status, LocalDateTime updatedAt) {
+        this.characterStatus = status;
+        this.characterStatusUpdatedAt = updatedAt;
+    }
 }

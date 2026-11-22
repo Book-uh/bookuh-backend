@@ -5,11 +5,14 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.net.http.HttpClient;
+import java.time.Duration;
 import java.util.List;
 import java.util.Map;
 
@@ -28,7 +31,11 @@ public class ClaudeService {
     public ClaudeService(@Value("${anthropic.api-key}") String apiKey,
                          @Value("${anthropic.model}") String model) {
         this.model = model;
+        HttpClient httpClient = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(10)).build();
+        JdkClientHttpRequestFactory requestFactory = new JdkClientHttpRequestFactory(httpClient);
+        requestFactory.setReadTimeout(Duration.ofSeconds(70));
         this.restClient = RestClient.builder()
+                .requestFactory(requestFactory)
                 .baseUrl(BASE_URL)
                 .defaultHeader("Authorization", "Bearer " + apiKey)
                 .defaultHeader("anthropic-version", API_VERSION)
