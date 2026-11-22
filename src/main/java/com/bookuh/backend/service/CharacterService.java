@@ -48,30 +48,7 @@ public class CharacterService {
 
     public CharacterResponse resolve(User user, String isbn, String mode) {
         Preparation preparation = transactionTemplate.execute(transaction -> claimPreparation(user, isbn, mode));
-
-        if (preparation.startedAt != null) {
-            try {
-                JsonNode candidates = ai.prepare(preparation.book);
-                transactionTemplate.executeWithoutResult(transaction ->
-                        completePreparation(isbn, preparation.startedAt, candidates));
-            } catch (RuntimeException error) {
-                try {
-                    transactionTemplate.executeWithoutResult(transaction -> {
-                        Book book = lockedBook(isbn);
-                        if (samePreparation(book, preparation.startedAt)) {
-                            book.updateCharacterStatus(FAILED, now());
-                        }
-                    });
-                } catch (RuntimeException storageError) {
-                    error.addSuppressed(storageError);
-                }
-                CharacterRequestException failure = new CharacterRequestException(HttpStatus.BAD_GATEWAY,
-                        "CHARACTER_PREPARATION_FAILED", "인물을 준비하지 못했습니다. 다시 시도해 주세요.");
-                failure.addSuppressed(error);
-                throw failure;
-            }
-        }
-
+        prepareCharactersIfNeeded(isbn, preparation);
         return transactionTemplate.execute(transaction -> response(user, isbn, mode));
     }
 
@@ -104,6 +81,25 @@ public class CharacterService {
         return new Preparation(book, now);
     }
 
+    private void prepareCharactersIfNeeded(String isbn, Preparation preparation) {
+        LocalDateTime startedAt = preparation.startedAt;
+        if (startedAt == null) {
+            return;
+        }
+
+        try {
+            JsonNode candidates = ai.prepare(preparation.book);
+            transactionTemplate.executeWithoutResult(transaction ->
+                    completePreparation(isbn, startedAt, candidates));
+        } catch (RuntimeException error) {
+            markPreparationFailed(isbn, startedAt, error);
+            CharacterRequestException failure = new CharacterRequestException(HttpStatus.BAD_GATEWAY,
+                    "CHARACTER_PREPARATION_FAILED", "인물을 준비하지 못했습니다. 다시 시도해 주세요.");
+            failure.addSuppressed(error);
+            throw failure;
+        }
+    }
+
     private void completePreparation(String isbn, LocalDateTime startedAt, JsonNode candidates) {
         Book book = lockedBook(isbn);
         if (!samePreparation(book, startedAt)) {
@@ -133,6 +129,19 @@ public class CharacterService {
         }
         bookCharacterRepository.saveAll(profiles);
         book.updateCharacterStatus(profiles.isEmpty() ? NO_CANDIDATES : READY, now());
+    }
+
+    private void markPreparationFailed(String isbn, LocalDateTime startedAt, RuntimeException originalError) {
+        try {
+            transactionTemplate.executeWithoutResult(transaction -> {
+                Book book = lockedBook(isbn);
+                if (samePreparation(book, startedAt)) {
+                    book.updateCharacterStatus(FAILED, now());
+                }
+            });
+        } catch (RuntimeException storageError) {
+            originalError.addSuppressed(storageError);
+        }
     }
 
     private CharacterResponse response(User user, String isbn, String mode) {

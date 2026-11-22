@@ -44,31 +44,15 @@ public class RoleplayService {
             return toReply(turn);
         }
 
+        Long turnId = turn.getId();
+        LocalDateTime startedAt = turn.getUpdatedAt();
+
         try {
             RoleplayAiService.Reply generated = ai.reply(work.character, turn.getProgressStage(),
                     turn.getProgressScene(), work.replyCount, work.history, turn.getMessage());
-            return transactionTemplate.execute(transaction -> {
-                ChatTurn stored = chatTurnRepository.findLockedById(turn.getId()).orElseThrow();
-                if (sameAttempt(stored, turn.getUpdatedAt())) {
-                    stored.succeed(generated.getReply(), generated.isIncludeInFutureContext());
-                    return toReply(stored);
-                }
-                if (ChatTurn.SUCCEEDED.equals(stored.getStatus())) {
-                    return toReply(stored);
-                }
-                throw busy();
-            });
+            return saveReply(turnId, startedAt, generated);
         } catch (RuntimeException error) {
-            try {
-                transactionTemplate.executeWithoutResult(transaction ->
-                        chatTurnRepository.findLockedById(turn.getId()).ifPresent(stored -> {
-                            if (sameAttempt(stored, turn.getUpdatedAt())) {
-                                stored.fail();
-                            }
-                        }));
-            } catch (RuntimeException storageError) {
-                error.addSuppressed(storageError);
-            }
+            markFailed(turnId, startedAt, error);
             throw error;
         }
     }
@@ -130,6 +114,31 @@ public class RoleplayService {
             history.add(Map.of("role", "assistant", "content", past.getReply()));
         }
         return new ReplyWork(turn, character, count, history);
+    }
+
+    private RoleplayResponse saveReply(Long turnId, LocalDateTime startedAt, RoleplayAiService.Reply generated) {
+        return transactionTemplate.execute(transaction -> {
+            ChatTurn stored = chatTurnRepository.findLockedById(turnId).orElseThrow();
+            if (sameAttempt(stored, startedAt)) {
+                stored.succeed(generated.getReply(), generated.isIncludeInFutureContext());
+                return toReply(stored);
+            }
+            if (ChatTurn.SUCCEEDED.equals(stored.getStatus())) {
+                return toReply(stored);
+            }
+            throw busy();
+        });
+    }
+
+    private void markFailed(Long turnId, LocalDateTime startedAt, RuntimeException originalError) {
+        try {
+            transactionTemplate.executeWithoutResult(transaction ->
+                    chatTurnRepository.findLockedById(turnId)
+                            .filter(stored -> sameAttempt(stored, startedAt))
+                            .ifPresent(ChatTurn::fail));
+        } catch (RuntimeException storageError) {
+            originalError.addSuppressed(storageError);
+        }
     }
 
     private RoleplayResponse toReply(ChatTurn turn) {
