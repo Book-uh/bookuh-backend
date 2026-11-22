@@ -1,5 +1,6 @@
 package com.bookuh.backend.service;
 
+import com.bookuh.backend.dto.ManagerAction;
 import com.bookuh.backend.dto.ManagerRequest;
 import com.bookuh.backend.dto.ManagerResponse;
 import com.bookuh.backend.dto.ShelfItemResponse;
@@ -26,10 +27,14 @@ import org.springframework.web.server.ResponseStatusException;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import com.bookuh.backend.dto.ManagerMessagesResponse;
@@ -41,6 +46,17 @@ import java.time.ZoneOffset;
 public class ManagerService {
 
     private static final String REQUEST_KIND = "MANAGER_INTERPRET";
+    private static final String REMOVE_SHELF_BOOK = "REMOVE_SHELF_BOOK";
+    private static final Pattern SELECTED_BOOK_REFERENCE = Pattern.compile(
+            "(?:^|\\s)(?:이\\s*책|선택한\\s*책)(?=$|\\s|[을를은는이가도])");
+    private static final Pattern BULK_SHELF_REMOVAL = Pattern.compile(
+            "책장(?:을|도)?\\s*비우|(?:모든|전체)\\s*(?:책|도서)"
+                    + "|(?:책|도서)(?:을|를|들|들은|들을)?\\s*(?:전부|몽땅|모두|다)\\s*(?:빼|삭제|제거|꺼내|지워)");
+
+    private static final Pattern TITLE_SUFFIX = Pattern.compile("\\s*(?:\\([^()]*\\)|\\[[^\\[\\]]*\\])$");
+    private static final Pattern EDITION_LABEL = Pattern.compile(
+            "개정판|초판본|양장본|문고판|보급판|특별판|한정판|기념판|증보판|전자책|리커버|hardcover|paperback|edition",
+            Pattern.CASE_INSENSITIVE);
 
     // 북어에게 주는 역할 설명서. 모든 요청이 같은 내용을 쓴다
     private static final String MANAGER_PROMPT = loadPrompt("prompts/manager.txt");
@@ -146,6 +162,7 @@ public class ManagerService {
 
     // 지난 대화와 이번 메시지를 북어에게 보내 응답을 받는다
     private ManagerResponse askManager(User user, ManagerRequest request) {
+        List<ShelfItemResponse> shelf = bookshelfService.getShelf(user);
         // 이번 메시지에 현재 시각, 시간대, 선택한 책을 함께 적는다
         String userContent = """
                 [현재 시각] %s
@@ -155,7 +172,7 @@ public class ManagerService {
                 %s
                 [사용자 메시지] %s
                 """.formatted(request.getClientTime(), request.getTimeZone(),
-                request.getIsbn(), describeShelf(user), request.getMessage());
+                request.getIsbn(), describeShelf(shelf), request.getMessage());
 
         // 지난 대화를 불러오고, 이번 메시지를 맨 뒤에 붙인다
         List<Map<String, String>> messages = loadHistory(user);
@@ -170,10 +187,91 @@ public class ManagerService {
         if (response.getActions() == null) {
             response.setActions(new ArrayList<>());
         }
+        checkShelfRemoval(request, shelf, response);
         for (int i = 0; i < response.getActions().size(); i++) {
             response.getActions().get(i).setActionId(request.getOperationId() + ":" + (i + 1));
         }
         return response;
+    }
+
+    // 책장에서 뺄 대상을 확인하고 앱이 다시 물어볼 수 있게 책 정보를 돌려준다
+    private void checkShelfRemoval(ManagerRequest request, List<ShelfItemResponse> shelf,
+                                   ManagerResponse response) {
+        List<ManagerAction> removals = response.getActions().stream()
+                .filter(action -> REMOVE_SHELF_BOOK.equals(action.getType()))
+                .toList();
+        if (removals.isEmpty()) {
+            return;
+        }
+        if (removals.size() > 1 || BULK_SHELF_REMOVAL.matcher(request.getMessage()).find()) {
+            askAboutShelfRemoval(response, "책장에서 뺄 책을 한 권씩 말해 주세요.");
+            return;
+        }
+
+        ManagerAction removal = removals.get(0);
+        List<ShelfItemResponse> matches = findShelfRemovalCandidates(request, shelf, removal);
+        if (matches.isEmpty()) {
+            askAboutShelfRemoval(response, "책 제목을 확인해 다시 말하거나, 책 선택에서 고른 뒤 ‘이 책 책장에서 빼줘’라고 말해 주세요.");
+            return;
+        }
+        if (matches.size() > 1) {
+            askAboutShelfRemoval(response, "같은 제목의 책이 여러 권 있어요. 책 선택에서 판본을 고른 뒤 ‘이 책 책장에서 빼줘’라고 말해 주세요.");
+            return;
+        }
+
+        ShelfItemResponse book = matches.get(0);
+        removal.setIsbn(book.getIsbn());
+        removal.setValues(Map.of("title", book.getTitle()));
+        String confirmation = "아래에서 책장에서 뺄 책을 확인해 주세요.";
+        String clarification = response.getClarifyingQuestion();
+        response.setAssistantMessage(clarification == null ? confirmation : clarification + " " + confirmation);
+    }
+
+    private List<ShelfItemResponse> findShelfRemovalCandidates(ManagerRequest request,
+                                                               List<ShelfItemResponse> shelf,
+                                                               ManagerAction removal) {
+        Object title = removal.getValues() == null ? null : removal.getValues().get("title");
+        if (title == null && SELECTED_BOOK_REFERENCE.matcher(request.getMessage()).find()) {
+            return shelf.stream().filter(book -> book.getIsbn().equals(request.getIsbn())).toList();
+        }
+        if (!(title instanceof String titleText)) {
+            return List.of();
+        }
+        String normalizedTitle = normalizeTitle(titleText);
+        String normalizedMessage = normalizeTitle(request.getMessage());
+        if (normalizedTitle.isEmpty() || !normalizedMessage.contains(normalizedTitle)) {
+            return List.of();
+        }
+
+        List<ShelfItemResponse> matches = shelf.stream()
+                .filter(book -> normalizeTitle(book.getTitle()).equals(normalizedTitle)
+                        || normalizeBaseTitle(book.getTitle()).equals(normalizedTitle))
+                .toList();
+        List<ShelfItemResponse> namedEditions = matches.stream()
+                .filter(book -> !normalizeTitle(book.getTitle()).equals(normalizedTitle)
+                        && normalizedMessage.contains(normalizeTitle(book.getTitle())))
+                .toList();
+        return namedEditions.isEmpty() ? matches : namedEditions;
+    }
+
+    private String normalizeTitle(String title) {
+        return Normalizer.normalize(title, Normalizer.Form.NFKC).toLowerCase(Locale.ROOT)
+                .replaceAll("[^\\p{L}\\p{N}]", "");
+    }
+
+    private String normalizeBaseTitle(String title) {
+        String editionTitle = Normalizer.normalize(title, Normalizer.Form.NFKC).strip();
+        Matcher suffix = TITLE_SUFFIX.matcher(editionTitle);
+        if (suffix.find() && EDITION_LABEL.matcher(suffix.group()).find()) {
+            editionTitle = editionTitle.substring(0, suffix.start());
+        }
+        return normalizeTitle(editionTitle);
+    }
+
+    private void askAboutShelfRemoval(ManagerResponse response, String question) {
+        response.getActions().removeIf(action -> REMOVE_SHELF_BOOK.equals(action.getType()));
+        response.setClarifyingQuestion(question);
+        response.setAssistantMessage(question);
     }
 
     // 사용자 말과 북어 말을 말풍선으로 저장한다
@@ -185,14 +283,14 @@ public class ManagerService {
     }
 
     // 북어가 책 제목으로 ISBN을 찾을 수 있게 책장을 한 줄씩 적는다
-    private String describeShelf(User user) {
-        List<ShelfItemResponse> shelf = bookshelfService.getShelf(user);
+    private String describeShelf(List<ShelfItemResponse> shelf) {
         if (shelf.isEmpty()) {
             return "(비어 있음)";
         }
         return shelf.stream()
-                .map(book -> "- %s / %s / %s".formatted(
-                        book.getTitle(), String.join(", ", book.getAuthors()), book.getIsbn()))
+                .map(book -> "- %s / %s / %s / %s".formatted(
+                        book.getTitle(), String.join(", ", book.getAuthors()),
+                        book.getPublisher() == null ? "출판사 미상" : book.getPublisher(), book.getIsbn()))
                 .collect(Collectors.joining("\n"));
     }
 
