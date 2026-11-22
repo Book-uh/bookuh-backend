@@ -20,6 +20,8 @@ import java.util.Map;
 public class ApiRequest {
 
     private static final String PROCESSING = "PROCESSING";
+    private static final String AWAITING_CONFIRMATION = "AWAITING_CONFIRMATION";
+    private static final String CANCELLED = "CANCELLED";
     private static final String SUCCEEDED = "SUCCEEDED";
     private static final String FAILED = "FAILED";
 
@@ -87,6 +89,29 @@ public class ApiRequest {
         this.responseCode = (short) responseCode;
         this.resultPayload = resultPayload;
         this.updatedAt = LocalDateTime.now(ZoneOffset.UTC);
+    }
+
+    public void awaitConfirmation(Map<String, Object> pendingPayload, Map<String, Object> resultPayload) {
+        this.status = AWAITING_CONFIRMATION;
+        this.responseCode = 200;
+        this.pendingPayload = pendingPayload;
+        this.resultPayload = resultPayload;
+        this.updatedAt = LocalDateTime.now(ZoneOffset.UTC);
+    }
+
+    public void cancel(Map<String, Object> resultPayload) {
+        this.status = CANCELLED;
+        this.responseCode = 200;
+        this.resultPayload = resultPayload;
+        this.updatedAt = LocalDateTime.now(ZoneOffset.UTC);
+    }
+
+    public boolean isAwaitingConfirmation() {
+        return AWAITING_CONFIRMATION.equals(status);
+    }
+
+    public boolean isCancelled() {
+        return CANCELLED.equals(status);
     }
 
     // 요청을 실패 상태로 바꾼다
