@@ -42,6 +42,9 @@ public class BookshelfItem {
     @Column(name = "shelved_at", nullable = false, updatable = false)
     private LocalDateTime shelvedAt;
 
+    @Column(name = "removed_at")
+    private LocalDateTime removedAt;
+
     @Column(name = "reading_status", nullable = false, length = 16)
     private String readingStatus;
 
@@ -66,6 +69,17 @@ public class BookshelfItem {
         this.book = book;
         this.shelvedAt = LocalDateTime.now(ZoneOffset.UTC);
         this.readingStatus = NOT_STARTED;
+    }
+
+    // 기록이 참조하는 책장 칸을 유지하고 목록에서만 뺀다
+    public void removeFromShelf() {
+        if (removedAt == null) {
+            removedAt = LocalDateTime.now(ZoneOffset.UTC);
+        }
+    }
+
+    public void restoreToShelf() {
+        removedAt = null;
     }
 
     public void changeReadingStatus(String status) {

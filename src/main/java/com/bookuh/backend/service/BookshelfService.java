@@ -20,6 +20,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -51,27 +52,40 @@ public class BookshelfService {
     private final ObjectMapper objectMapper;
 
     //사용자의 책장에 책을 담는다
-    @Transactional
+    @Transactional(isolation = Isolation.READ_COMMITTED)
     public ShelfItemResult addToShelf(User user, String isbn13, ShelfItemRequest request) {
-        //공용 책 정보가 DB에 없으면 저장하고, 있으면 기존 것을 사용한다.
-        Book book = bookRepository.findById(isbn13)
-                .orElseGet(() -> bookRepository.save(fetchBook(isbn13, request.getGoogleVolumeId())));
+        // 외부 도서 조회가 끝난 뒤 사용자 잠금을 잡는다
+        Book candidate = bookRepository.findById(isbn13)
+                .orElseGet(() -> fetchBook(isbn13, request.getGoogleVolumeId()));
 
-        // 같은 사용자가 같은 책을 이미 담았으면 기존 칸을 그대로 돌려준다
-        Optional<BookshelfItem> existing = bookshelfItemRepository.findByUserAndBook(user, book);
+        User lockedUser = lockUser(user);
+        Optional<BookshelfItem> existing = bookshelfItemRepository.findByUserAndBookIsbn13(lockedUser, isbn13);
         if (existing.isPresent()) {
-            return new ShelfItemResult(toResponse(existing.get()), false);
+            BookshelfItem item = existing.get();
+            item.restoreToShelf();
+            return new ShelfItemResult(toResponse(item), false);
         }
 
+        //공용 책 정보가 DB에 없으면 저장하고, 있으면 기존 것을 사용한다.
+        Book book = bookRepository.findById(isbn13)
+                .orElseGet(() -> bookRepository.save(candidate));
+
         // 새 책장 칸을 만들어 저장한다
-        BookshelfItem saved = bookshelfItemRepository.save(new BookshelfItem(user, book));
+        BookshelfItem saved = bookshelfItemRepository.save(new BookshelfItem(lockedUser, book));
         return new ShelfItemResult(toResponse(saved), true);
+    }
+
+    @Transactional
+    public void removeFromShelf(User user, String isbn13) {
+        User lockedUser = lockUser(user);
+        bookshelfItemRepository.findByUserAndBookIsbn13(lockedUser, isbn13)
+                .ifPresent(BookshelfItem::removeFromShelf);
     }
 
     // 사용자의 책장을 최근 담은 순으로 조회한다
     @Transactional(readOnly = true)
     public List<ShelfItemResponse> getShelf(User user) {
-        return bookshelfItemRepository.findByUserOrderByShelvedAtDescBookIsbn13Asc(user).stream()
+        return bookshelfItemRepository.findVisibleByUser(user).stream()
                 .map(this::toResponse)
                 .toList();
     }

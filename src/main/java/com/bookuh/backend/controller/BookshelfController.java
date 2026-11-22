@@ -67,6 +67,15 @@ public class BookshelfController {
         return Map.of("code", exception.getMessage());
     }
 
+    @DeleteMapping("/{isbn13}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void removeFromShelf(
+            @RequestHeader(value = "Authorization", required = false) String authorization,
+            @PathVariable("isbn13") @Pattern(regexp = "\\d{13}") String isbn13) {
+        User user = authService.authenticateBearer(authorization);
+        bookshelfService.removeFromShelf(user, isbn13);
+    }
+
     //접속한 사용자의 책장에 책을 담는다
     @PutMapping("/{isbn13}")
     public ResponseEntity<ShelfItemResponse> addToShelf(
