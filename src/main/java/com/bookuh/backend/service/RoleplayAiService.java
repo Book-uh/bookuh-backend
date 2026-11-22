@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.AllArgsConstructor;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -21,19 +22,31 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+@Slf4j
 @Service
 @RequiredArgsConstructor
 public class RoleplayAiService {
 
     private static final String CHARACTER_PROMPT = readPrompt("character-preparation.txt");
     private static final String ROLEPLAY_PROMPT = readPrompt("roleplay.txt");
+    private static final Map<String, Object> ROLEPLAY_SCHEMA = Map.of(
+            "type", "object",
+            "properties", Map.of(
+                    "reply", Map.of("type", "string"),
+                    "withinBoundary", Map.of("type", "boolean"),
+                    "includeInFutureContext", Map.of("type", "boolean")
+            ),
+            "required", List.of("reply", "withinBoundary", "includeInFutureContext"),
+            "additionalProperties", false
+    );
 
     private final ClaudeService claudeService;
     private final ObjectMapper objectMapper;
 
     public JsonNode prepare(Book book) {
         String data = json(Map.of("title", book.getTitle(), "authors", book.getAuthors(), "isbn", book.getIsbn13()));
-        JsonNode candidates = structuredReply(CHARACTER_PROMPT, List.of(message("user", data))).path("characters");
+        JsonNode candidates = parseObject(claudeService.reply(CHARACTER_PROMPT, List.of(message("user", data))))
+                .path("characters");
         if (!candidates.isArray()) {
             throw invalidResponse();
         }
@@ -57,23 +70,24 @@ public class RoleplayAiService {
         messages.addAll(history);
         messages.add(message("user", message));
 
-        JsonNode answer = structuredReply(ROLEPLAY_PROMPT, messages);
-        JsonNode text = answer.path("reply");
-        if (!text.isTextual() || text.asText().isBlank() || text.asText().length() > 4000) {
-            throw invalidResponse();
-        }
+        JsonNode answer = parseObject(claudeService.replyWithSchema(ROLEPLAY_PROMPT, messages, ROLEPLAY_SCHEMA));
 
         // 정보 범위를 지켰다는 판정이 빠졌을 때는 사건에 대한 답을 제공하지 않는다
         if (!answer.path("withinBoundary").isBoolean() || !answer.path("withinBoundary").asBoolean()) {
             return new Reply("그 이야기는 내가 아는 데까지만 들려줄 수 있어. 어느 부분이 궁금해?", false);
+        }
+        JsonNode text = answer.path("reply");
+        if (!text.isTextual() || text.asText().isBlank() || text.asText().length() > 4000) {
+            log.warn("AI 역할극 응답의 대사 필드를 읽지 못했습니다.");
+            throw invalidResponse();
         }
         return new Reply(text.asText().strip(),
                 answer.path("includeInFutureContext").isBoolean()
                         && answer.path("includeInFutureContext").asBoolean());
     }
 
-    private JsonNode structuredReply(String prompt, List<Map<String, String>> messages) {
-        String response = claudeService.reply(prompt, messages).strip();
+    private JsonNode parseObject(String rawResponse) {
+        String response = rawResponse.strip();
         if (response.startsWith("```") && response.endsWith("```")) {
             int firstLine = response.indexOf('\n');
             if (firstLine >= 0) {
@@ -83,10 +97,12 @@ public class RoleplayAiService {
         try {
             JsonNode node = objectMapper.readTree(response);
             if (node == null || !node.isObject()) {
+                log.warn("AI 인물 응답이 JSON 객체가 아닙니다.");
                 throw invalidResponse();
             }
             return node;
         } catch (JsonProcessingException e) {
+            log.warn("AI 인물 응답의 JSON 형식을 읽지 못했습니다.");
             throw invalidResponse();
         }
     }

@@ -6,4 +6,4 @@
 
 설명이나 마크다운 없이 JSON 객체 하나만 반환한다.
 {"reply":"인물이 하는 말","withinBoundary":true,"includeInFutureContext":false}
-withinBoundary는 답변이 양쪽의 정보 범위를 지켰다고 판단할 때만 true로 둔다. 독자가 인물이 모르는 정보를 꺼냈거나 그 여부가 애매하면 includeInFutureContext는 반드시 false다. 애매한 문답 전체는 이력에서 제외한다.
+withinBoundary는 독자의 질문이 아니라 당신이 쓴 reply의 정보 공개 범위를 판정한다. 독자가 모르는 비밀을 물어도 원작 사실을 확인하거나 암시하지 않고 인물답게 조심스럽게 응답했다면 그 답변은 안전하므로 withinBoundary를 true로 둔다. 독자가 인물이 모르는 정보를 꺼냈거나 그 여부가 애매하면 includeInFutureContext는 반드시 false다. 이 경우 안전한 reply를 보낼 수 있어도 애매한 문답 전체를 이력에서 제외한다.

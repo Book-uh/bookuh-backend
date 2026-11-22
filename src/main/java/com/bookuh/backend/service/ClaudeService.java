@@ -9,6 +9,7 @@ import org.springframework.http.client.JdkClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.net.http.HttpClient;
@@ -44,13 +45,26 @@ public class ClaudeService {
 
     // 역할 설정과 대화 목록을 보내고 답변을 받는다
     public String reply(String systemPrompt, List<Map<String, String>> messages) {
+        return reply(systemPrompt, messages, Map.of("effort", "medium"));
+    }
+
+    public String replyWithSchema(String systemPrompt, List<Map<String, String>> messages,
+                                  Map<String, Object> schema) {
+        return reply(systemPrompt, messages, Map.of(
+                "effort", "medium",
+                "format", Map.of("type", "json_schema", "schema", schema)
+        ));
+    }
+
+    private String reply(String systemPrompt, List<Map<String, String>> messages,
+                         Map<String, Object> outputConfig) {
         Map<String, Object> body = Map.of(
                 "model", model,
                 "max_tokens", MAX_TOKENS,
                 "system", systemPrompt,
                 "messages", messages,
                 "thinking", Map.of("type", "adaptive"),
-                "output_config", Map.of("effort", "medium")
+                "output_config", outputConfig
         );
 
         JsonNode response;
@@ -62,6 +76,11 @@ public class ClaudeService {
                     .retrieve()
                     .body(JsonNode.class);
         } catch (RestClientException exception) {
+            if (exception instanceof RestClientResponseException responseException) {
+                log.warn("Claude 요청 실패: HTTP {}", responseException.getStatusCode().value());
+            } else {
+                log.warn("Claude 요청 실패: {}", exception.getClass().getSimpleName());
+            }
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "AI 응답을 불러오지 못했습니다.", exception);
         }
@@ -70,11 +89,12 @@ public class ClaudeService {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 응답이 비어 있습니다.");
         }
 
-        log.info("Claude 사용량: 입력={}, 출력={}",
+        String stopReason = response.path("stop_reason").asText();
+        log.info("Claude 사용량: 입력={}, 출력={}, 종료 사유={}",
                 response.path("usage").path("input_tokens").asInt(),
-                response.path("usage").path("output_tokens").asInt());
+                response.path("usage").path("output_tokens").asInt(), stopReason);
 
-        if (response.path("stop_reason").asText().equals("max_tokens")) {
+        if ("max_tokens".equals(stopReason)) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "AI 답변이 완성되지 않았습니다.");
         }
 
